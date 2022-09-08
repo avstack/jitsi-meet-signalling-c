@@ -1,0 +1,35 @@
+[package]
+name = "jitsi-meet-signalling-c"
+description = "Jitsi Meet signalling library (C bindings)"
+version = "0.1.0"
+edition = "2021"
+license = "MIT/Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/avstack/jitsi-meet-signalling-c"
+documentation = "https://docs.rs/jitsi-meet-signalling-c"
+authors = ["Jasper Hugo <jasper@avstack.io>"]
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+anyhow = { version = "1", default-features = false, features = ["std"] }
+async-trait = { version = "0.1", default-features = false }
+jitsi-meet-signalling = { path = "../jitsi-meet-signalling", version = "0.1", default-features = false }
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread"] }
+tracing = { version = "0.1", default-features = false, features = ["attributes", "std"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+  "fmt",
+  "registry",
+  "smallvec",
+  "parking_lot",
+  "tracing-log",
+] }
+
+[features]
+default = ["tls-rustls-webpki-roots"]
+tls-insecure = ["jitsi-meet-signalling/tls-insecure"]
+tls-native = ["jitsi-meet-signalling/tls-native"]
+tls-native-vendored = ["jitsi-meet-signalling/tls-native-vendored"]
+tls-rustls-native-roots = ["jitsi-meet-signalling/tls-rustls-native-roots"]
+tls-rustls-webpki-roots = ["jitsi-meet-signalling/tls-rustls-webpki-roots"]
