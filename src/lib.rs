@@ -246,10 +246,8 @@ pub unsafe extern "C" fn jitsi_conference_accept(
 
 #[no_mangle]
 pub unsafe extern "C" fn jitsi_conference_local_endpoint_id(
-  context: *mut Context,
   conference: *mut Conference,
 ) -> *mut c_char {
-  assert!(!context.is_null());
   assert!(!conference.is_null());
   (*conference)
     .endpoint_id()
