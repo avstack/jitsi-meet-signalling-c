@@ -256,6 +256,12 @@ pub unsafe extern "C" fn jitsi_conference_local_endpoint_id(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn jitsi_conference_free(conference: *mut Conference) {
+  assert!(!conference.is_null());
+  drop(Box::from_raw(conference));
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn jitsi_participant_jid(participant: *mut Participant) -> *mut c_char {
   assert!(!participant.is_null());
   (*participant)
