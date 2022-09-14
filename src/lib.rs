@@ -103,18 +103,22 @@ impl jitsi_meet_signalling::Agent for Agent {
 
 #[no_mangle]
 pub unsafe extern "C" fn jitsi_logging_init_stdout(level: *const c_char) -> bool {
-  assert!(!level.is_null());
-  if let Ok(level) = CStr::from_ptr(level).to_str() {
-    if let Ok(level) = level.parse::<tracing::Level>() {
-      tracing_subscriber::fmt().with_max_level(level).init();
-      true
-    }
-    else {
-      false
-    }
+  unsafe fn inner(level: *const c_char) -> anyhow::Result<()> {
+    let level: tracing::Level = CStr::from_ptr(level).to_str()?.parse()?;
+    tracing_subscriber::fmt().with_max_level(level).init();
+    Ok(())
   }
-  else {
-    false
+
+  if level.is_null() {
+    return false;
+  }
+
+  match inner(level) {
+    Ok(_) => true,
+    Err(e) => {
+      error!("Failed to set up logging: {}", e);
+      false
+    },
   }
 }
 
@@ -123,32 +127,27 @@ pub unsafe extern "C" fn jitsi_logging_init_file(
   path: *const c_char,
   level: *const c_char,
 ) -> bool {
-  assert!(!path.is_null());
-  assert!(!level.is_null());
-  if let Ok(path) = CStr::from_ptr(path).to_str() {
-    if let Ok(level) = CStr::from_ptr(level).to_str() {
-      if let Ok(level) = level.parse::<tracing::Level>() {
-        if let Ok(file) = File::create(path) {
-          tracing_subscriber::fmt()
-            .with_max_level(level)
-            .with_writer(file)
-            .init();
-          true
-        }
-        else {
-          false
-        }
-      }
-      else {
-        false
-      }
-    }
-    else {
-      false
-    }
+  unsafe fn inner(path: *const c_char, level: *const c_char) -> anyhow::Result<()> {
+    let path = CStr::from_ptr(path).to_str()?;
+    let level: tracing::Level = CStr::from_ptr(level).to_str()?.parse()?;
+    let file = File::create(path)?;
+    tracing_subscriber::fmt()
+      .with_max_level(level)
+      .with_writer(file)
+      .init();
+    Ok(())
   }
-  else {
-    false
+
+  if path.is_null() || level.is_null() {
+    return false;
+  }
+
+  match inner(path, level) {
+    Ok(_) => true,
+    Err(e) => {
+      error!("Failed to set up logging: {}", e);
+      false
+    },
   }
 }
 
@@ -161,8 +160,9 @@ pub extern "C" fn jitsi_context_create() -> *mut Context {
 
 #[no_mangle]
 pub unsafe extern "C" fn jitsi_context_free(context: *mut Context) {
-  assert!(!context.is_null());
-  drop(Box::from_raw(context));
+  if !context.is_null() {
+    drop(Box::from_raw(context));
+  }
 }
 
 #[no_mangle]
@@ -172,25 +172,47 @@ pub unsafe extern "C" fn jitsi_connection_connect(
   xmpp_domain: *const c_char,
   tls_insecure: bool,
 ) -> *mut Connection {
-  assert!(!context.is_null());
-  assert!(!websocket_url.is_null());
-  assert!(!xmpp_domain.is_null());
-  let connection = (*context)
-    .runtime
-    .block_on(Connection::connect(
-      CStr::from_ptr(websocket_url).to_str().unwrap(),
-      CStr::from_ptr(xmpp_domain).to_str().unwrap(),
-      Authentication::Anonymous,
-      tls_insecure,
-    ))
-    .unwrap();
-  Box::into_raw(Box::new(connection))
+  if context.is_null() || websocket_url.is_null() || xmpp_domain.is_null() {
+    return ptr::null_mut();
+  }
+
+  let websocket_url = match CStr::from_ptr(websocket_url).to_str() {
+    Ok(url) => url,
+    Err(e) => {
+      error!("Invalid websocket_url: {}", e);
+      return ptr::null_mut();
+    },
+  };
+
+  let xmpp_domain = match CStr::from_ptr(xmpp_domain).to_str() {
+    Ok(url) => url,
+    Err(e) => {
+      error!("Invalid xmpp_domain: {}", e);
+      return ptr::null_mut();
+    },
+  };
+
+  let result = (*context).runtime.block_on(Connection::connect(
+    websocket_url,
+    xmpp_domain,
+    Authentication::Anonymous,
+    tls_insecure,
+  ));
+
+  match result {
+    Ok(connection) => Box::into_raw(Box::new(connection)),
+    Err(e) => {
+      error!("Failed to connect: {}", e);
+      ptr::null_mut()
+    },
+  }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn jitsi_connection_free(connection: *mut Connection) {
-  assert!(!connection.is_null());
-  drop(Box::from_raw(connection));
+  if !connection.is_null() {
+    drop(Box::from_raw(connection));
+  }
 }
 
 #[no_mangle]
@@ -201,19 +223,38 @@ pub unsafe extern "C" fn jitsi_connection_join(
   nick: *const c_char,
   agent: Agent,
 ) -> *mut Conference {
-  assert!(!context.is_null());
-  assert!(!connection.is_null());
-  assert!(!conference_name.is_null());
-  assert!(!nick.is_null());
-  let conference = (*context)
-    .runtime
-    .block_on((*connection).join(
-      CStr::from_ptr(conference_name).to_str().unwrap(),
-      CStr::from_ptr(nick).to_str().unwrap(),
-      Arc::new(agent),
-    ))
-    .unwrap();
-  Box::into_raw(Box::new(conference))
+  if context.is_null() || connection.is_null() || conference_name.is_null() || nick.is_null() {
+    return ptr::null_mut();
+  }
+
+  let conference_name = match CStr::from_ptr(conference_name).to_str() {
+    Ok(name) => name,
+    Err(e) => {
+      error!("Invalid conference_name: {}", e);
+      return ptr::null_mut();
+    },
+  };
+
+  let nick = match CStr::from_ptr(nick).to_str() {
+    Ok(nick) => nick,
+    Err(e) => {
+      error!("Invalid nick: {}", e);
+      return ptr::null_mut();
+    },
+  };
+
+  let result =
+    (*context)
+      .runtime
+      .block_on((*connection).join(conference_name, nick, Arc::new(agent)));
+
+  match result {
+    Ok(conference) => Box::into_raw(Box::new(conference)),
+    Err(e) => {
+      error!("Failed to join: {}", e);
+      ptr::null_mut()
+    },
+  }
 }
 
 #[no_mangle]
@@ -222,10 +263,18 @@ pub unsafe extern "C" fn jitsi_conference_accept(
   conference: *mut Conference,
   session_description: *const c_char,
 ) {
-  assert!(!context.is_null());
-  assert!(!conference.is_null());
-  assert!(!session_description.is_null());
-  let session_description = CStr::from_ptr(session_description).to_str().unwrap();
+  if context.is_null() || conference.is_null() || session_description.is_null() {
+    return;
+  }
+
+  let session_description = match CStr::from_ptr(session_description).to_str() {
+    Ok(sd) => sd,
+    Err(e) => {
+      error!("Invalid session_description: {}", e);
+      return;
+    },
+  };
+
   match SessionDescription::unmarshal(&mut Cursor::new(session_description)) {
     Ok(session_description) => match (*context)
       .runtime
@@ -248,11 +297,15 @@ pub unsafe extern "C" fn jitsi_conference_accept(
 pub unsafe extern "C" fn jitsi_conference_local_endpoint_id(
   conference: *mut Conference,
 ) -> *mut c_char {
-  assert!(!conference.is_null());
-  (*conference)
-    .endpoint_id()
-    .map(|endpoint_id| CString::new(endpoint_id.to_string()).unwrap().into_raw())
-    .unwrap_or_else(|_| ptr::null_mut())
+  if !conference.is_null() {
+    (*conference)
+      .endpoint_id()
+      .map(|endpoint_id| CString::new(endpoint_id.to_string()).unwrap().into_raw())
+      .unwrap_or_else(|_| ptr::null_mut())
+  }
+  else {
+    ptr::null_mut()
+  }
 }
 
 #[no_mangle]
@@ -261,62 +314,85 @@ pub unsafe extern "C" fn jitsi_conference_participant(
   conference: *mut Conference,
   endpoint_id: *const c_char,
 ) -> *mut Participant {
-  assert!(!context.is_null());
-  assert!(!conference.is_null());
-  assert!(!endpoint_id.is_null());
-  let endpoint_id = CStr::from_ptr(endpoint_id).to_str().unwrap();
+  if context.is_null() || conference.is_null() || endpoint_id.is_null() {
+    return ptr::null_mut();
+  }
+
+  let endpoint_id = match CStr::from_ptr(endpoint_id).to_str() {
+    Ok(id) => id,
+    Err(e) => {
+      error!("Invalid endpoint_id: {}", e);
+      return ptr::null_mut();
+    },
+  };
+
   (*context)
     .runtime
     .block_on((*conference).participant(endpoint_id))
     .map(|participant| Box::into_raw(Box::new(participant)))
-    .unwrap_or_else(|| ptr::null_mut())
+    .unwrap_or_else(ptr::null_mut)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn jitsi_conference_free(conference: *mut Conference) {
-  assert!(!conference.is_null());
-  drop(Box::from_raw(conference));
+  if !conference.is_null() {
+    drop(Box::from_raw(conference));
+  }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn jitsi_participant_jid(participant: *mut Participant) -> *mut c_char {
-  assert!(!participant.is_null());
-  (*participant)
-    .jid
-    .as_ref()
-    .map(|jid| CString::new(jid.to_string()).unwrap().into_raw())
-    .unwrap_or_else(ptr::null_mut)
+  if !participant.is_null() {
+    (*participant)
+      .jid
+      .as_ref()
+      .map(|jid| CString::new(jid.to_string()).unwrap().into_raw())
+      .unwrap_or_else(ptr::null_mut)
+  }
+  else {
+    ptr::null_mut()
+  }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn jitsi_participant_endpoint_id(
   participant: *mut Participant,
 ) -> *mut c_char {
-  assert!(!participant.is_null());
-  (*participant)
-    .endpoint_id()
-    .map(|endpoint_id| CString::new(endpoint_id.to_string()).unwrap().into_raw())
-    .unwrap_or_else(|_| ptr::null_mut())
+  if !participant.is_null() {
+    (*participant)
+      .endpoint_id()
+      .map(|endpoint_id| CString::new(endpoint_id.to_string()).unwrap().into_raw())
+      .unwrap_or_else(|_| ptr::null_mut())
+  }
+  else {
+    ptr::null_mut()
+  }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn jitsi_participant_nick(participant: *mut Participant) -> *mut c_char {
-  assert!(!participant.is_null());
-  (*participant)
-    .nick
-    .as_ref()
-    .map(|nick| CString::new(nick.clone()).unwrap().into_raw())
-    .unwrap_or_else(ptr::null_mut)
+  if !participant.is_null() {
+    (*participant)
+      .nick
+      .as_ref()
+      .map(|nick| CString::new(nick.clone()).unwrap().into_raw())
+      .unwrap_or_else(ptr::null_mut)
+  }
+  else {
+    ptr::null_mut()
+  }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn jitsi_participant_free(participant: *mut Participant) {
-  assert!(!participant.is_null());
-  drop(Box::from_raw(participant));
+  if !participant.is_null() {
+    drop(Box::from_raw(participant));
+  }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn jitsi_string_free(s: *mut c_char) {
-  assert!(!s.is_null());
-  drop(CString::from_raw(s));
+  if !s.is_null() {
+    drop(CString::from_raw(s));
+  }
 }
