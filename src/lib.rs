@@ -272,6 +272,17 @@ pub unsafe extern "C" fn jitsi_participant_jid(participant: *mut Participant) ->
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn jitsi_participant_endpoint_id(
+  participant: *mut Participant,
+) -> *mut c_char {
+  assert!(!participant.is_null());
+  (*participant)
+    .endpoint_id()
+    .map(|endpoint_id| CString::new(endpoint_id.to_string()).unwrap().into_raw())
+    .unwrap_or_else(|_| ptr::null_mut())
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn jitsi_participant_nick(participant: *mut Participant) -> *mut c_char {
   assert!(!participant.is_null());
   (*participant)
