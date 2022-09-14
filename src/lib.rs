@@ -256,6 +256,22 @@ pub unsafe extern "C" fn jitsi_conference_local_endpoint_id(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn jitsi_conference_participant(
+  context: *mut Context,
+  conference: *mut Conference,
+  endpoint_id: *const c_char,
+) -> *mut Participant {
+  assert!(!conference.is_null());
+  assert!(!endpoint_id.is_null());
+  let endpoint_id = CStr::from_ptr(endpoint_id).to_str().unwrap();
+  (*context)
+    .runtime
+    .block_on((*conference).participant(endpoint_id))
+    .map(|participant| Box::into_raw(Box::new(participant)))
+    .unwrap_or_else(|| ptr::null_mut())
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn jitsi_conference_free(conference: *mut Conference) {
   assert!(!conference.is_null());
   drop(Box::from_raw(conference));
@@ -290,6 +306,12 @@ pub unsafe extern "C" fn jitsi_participant_nick(participant: *mut Participant) -
     .as_ref()
     .map(|nick| CString::new(nick.clone()).unwrap().into_raw())
     .unwrap_or_else(ptr::null_mut)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn jitsi_participant_free(participant: *mut Participant) {
+  assert!(!participant.is_null());
+  drop(Box::from_raw(participant));
 }
 
 #[no_mangle]
