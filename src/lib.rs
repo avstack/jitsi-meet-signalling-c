@@ -261,6 +261,7 @@ pub unsafe extern "C" fn jitsi_conference_participant(
   conference: *mut Conference,
   endpoint_id: *const c_char,
 ) -> *mut Participant {
+  assert!(!context.is_null());
   assert!(!conference.is_null());
   assert!(!endpoint_id.is_null());
   let endpoint_id = CStr::from_ptr(endpoint_id).to_str().unwrap();
